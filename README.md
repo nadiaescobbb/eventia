@@ -1,4 +1,3 @@
-```markdown
 # ⚡ Eventia
 
 > Plataforma de gestión de eventos con control de concurrencia en tiempo real y asignación atómica de cupos.
