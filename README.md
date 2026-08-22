@@ -1,107 +1,140 @@
-# 💻 Eventia — Plataforma de Gestión de Eventos & Control de Concurrencia
+```markdown
+# ⚡ Eventia
 
-> **Autoría & Desarrollo**: Nadia Escobar — *Frontend Engineer & Software Architecture*  
-> **Evento**: HackLab + Hackathon Corrientes 2026 | **Metodología**: Agent-Driven Development (ADD)  
-> **Stack**: React 18 · TypeScript 5.7 · Supabase (PostgreSQL / Auth / RLS) · Tailwind CSS · Vite
+> Plataforma de gestión de eventos con control de concurrencia en tiempo real y asignación atómica de cupos.
 
----
+[![React](https://img.shields.io/badge/React_18-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript_5.7-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
 
-## 👤 Acerca de la Autora & Propósito Técnico
-
-Este repositorio fue diseñado e implementado por **Nadia Escobar** con el propósito de demostrar patrones de **Arquitectura Frontend Senior**, diseño desacoplado de datos y resolución de concurrencia en tiempo real.
-
-En lugar de construir una SPA convencional acoplada directamente al SDK del backend, este proyecto destaca por:
-
-1. **Patrón Repositorio / Capa de Abstracción (`src/lib/dataAccess`)**: Desacoplamiento total entre los componentes UI de React y Supabase. Si la infraestructura subyacente de datos cambia, las vistas no requieren modificaciones.
-2. **Consistencia Transaccional & Concurrencia (PL/pgSQL)**: La regla de no superar cupos máximos se garantiza a nivel de base de datos en PostgreSQL mediante triggers y funciones atómicas, previniendo *race conditions* ante solicitudes simultáneas.
-3. **Seguridad Basada en Roles (Row Level Security - RLS)**: Control de acceso granular directo en motor SQL que valida y restringe permisos de lectura y escritura según el rol (`admin` vs `participant`).
-4. **Metodología Guiada por Agentes (ADD)**: Implementación disciplinada estructurada en etapas: Especificación de Negocio $\rightarrow$ Reglas de Negocio Estrictas ($\text{BR-001}$ al $\text{BR-019}$) $\rightarrow$ Arquitectura Técnica $\rightarrow$ Código Tipado y Mantenible.
+Desarrollado durante el **HackLab / Hackathon Corrientes 2026**.
 
 ---
 
-## 🛠️ Decisiones de Ingeniería & Patrones de Diseño
+## 🎯 Resumen del Proyecto
 
-### 1. Desacoplamiento Estricto de la Capa de Datos
-Para evitar la fuga de abstracción (*leaky abstractions*):
-* Todas las operaciones de lectura y mutación están encapsuladas en `activitiesService` y `registrationsService`.
-* Los errores del backend (violación de constraints, triggers o bloqueos RLS) son interceptados por un **Mapeador Semántico de Errores** (`src/lib/dataAccess/errors.ts`), traduciéndolos a tipos dominiales claros (`CUPOS_AGOTADOS`, `YA_INSCRIPTO`, `PERMISO_DENEGADO`).
+Eventia resuelve el problema clásico de la **sobreventa de cupos (race conditions)** en plataformas de eventos cuando múltiples usuarios intentan registrarse al mismo milisegundo. 
 
-### 2. Garantía de Integridad (BR-001, BR-003, BR-014)
-* **Unicidad de Inscripción**: Restricción `UNIQUE(activity_id, participant_id)` en la tabla `registrations`.
-* **Control Transaccional de Capacidad**: Trigger SQL `check_capacity_before_registration` que invalida la transacción en PostgreSQL si la disponibilidad es cero.
-* **Protección de Cupos en Modificación (BR-006)**: Validación pre-mutación en `activitiesService.updateActivity()` que impide a un administrador definir un cupo inferior a las inscripciones ya confirmadas.
+En lugar de confiar en validaciones en el cliente, la integridad y el control transaccional se garantizan directamente en el motor de base de datos (**PostgreSQL via Supabase**).
 
 ---
 
-## 📐 Reglas de Negocio Implementadas
+## 🏗️ Arquitectura del Sistema
 
-| Regla | Dominio | Mecanismo de Control Técnico |
-| :--- | :--- | :--- |
-| **BR-001** | Control de Cupo Máximo | Trigger PL/pgSQL `check_capacity_before_registration` en PostgreSQL |
-| **BR-002** | Liberación Inmediata | Operación DELETE atómica en `registrations` |
-| **BR-003** | Inscripción Única | Constraint `UNIQUE(activity_id, participant_id)` |
-| **BR-005** | Autonomía de Cancelación | RLS Policy `DELETE TO authenticated USING (participant_id = auth.uid())` |
-| **BR-006** | Protección de Cupos Admin | Validación en `activitiesService.updateActivity()` previa a la mutación |
-| **BR-014** | Manejo de Concurrencia | Transacciones atómicas a nivel de motor PostgreSQL |
-| **BR-017** | Cálculo Dinámico de Cupos | Vista de Ocupación `v_activity_occupancy` + DTO transformado |
+```mermaid
+flowchart TD
+    subgraph UI ["💻 Frontend (React 18 + TS)"]
+        Vistas["Vistas & Modales"] --> Hooks["AuthContext / Hooks"]
+    end
 
----
+    subgraph Abstraction ["📦 Data Access Layer (src/lib)"]
+        Hooks --> Services["activitiesService / registrationsService"]
+        Services --> ErrorMap["Mapeo Semántico de Errores"]
+    end
 
-## 📁 Estructura del Proyecto
+    subgraph Backend ["⚡ Supabase / PostgreSQL"]
+        Services --> RLS["Row Level Security (RLS)"]
+        RLS --> Trigger["PL/pgSQL Trigger (Check Cupo)"]
+        Trigger --> DB[("Tablas & Vistas SQL")]
+    end
 
 ```
+
+---
+
+## 🧠 Decisiones Técnicas & Arquitectura
+
+| Área | Implementación | Por qué se eligió |
+| --- | --- | --- |
+| **🛡️ Concurrencia** | Trigger `check_capacity_before_registration` (PL/pgSQL) | Evita race conditions ejecutando la validación atómica en la misma transacción SQL. |
+| **🔒 Idempotencia** | Constraint `UNIQUE(activity_id, participant_id)` | Previene registros duplicados a nivel esquema, sin importar el estado del cliente. |
+| **📦 Data Layer** | Patrón Repository en `src/lib/dataAccess/` | Desacopla la UI del SDK de Supabase y centraliza el manejo tipado de errores. |
+| **🔑 Permisos** | Row Level Security (RLS) en PostgreSQL | El backend rechaza mutaciones no autorizadas según el rol (`admin` vs `participant`). |
+
+---
+
+## 💡 Aspectos Destacados de Código
+
+### 1. Mapeo Semántico de Errores (`src/lib/dataAccess/errors.ts`)
+
+Los errores crudos de PostgreSQL o violaciones de constraints se transforman en tipos claros para la interfaz:
+
+```typescript
+// Convierte códigos SQL / RLS en estados claros para la UI
+export function mapDatabaseError(error: PostgrestError): AppError {
+  if (error.code === '23505') return { type: 'ALREADY_REGISTERED', message: 'Ya te encuentras inscripto.' };
+  if (error.message.includes('capacity_exceeded')) return { type: 'EVENT_FULL', message: 'No quedan cupos disponibles.' };
+  return { type: 'UNKNOWN_ERROR', message: 'Ocurrió un error inesperado.' };
+}
+
+```
+
+### 2. Control de Acceso por RLS
+
+* **Participantes:** Acceso de lectura global al catálogo; permisos de cancelación restringidos exclusivamente a sus propios registros (`auth.uid() = participant_id`).
+* **Administradores:** Control total para creación de actividades, edición y panel de métricas.
+
+---
+
+## 📁 Estructura del Directorio
+
+```text
 src/
-├── types/
-│   └── events.ts                # Contratos e Interfaces TypeScript de Dominio
-├── context/
-│   └── AuthContext.tsx        # Gestión de Sesión Global y Roles (Admin / Participant)
-├── lib/
-│   ├── supabaseClient.ts        # Cliente Oficial Supabase (Singleton)
-│   └── dataAccess/              # Capa de Abstracción y Repositorio de Datos
-│       ├── errors.ts            # Estandarización y Mapeo de Errores
-│       ├── activitiesService.ts # Lógica de Negocio de Eventos
-│       └── registrationsService.ts # Lógica de Inscripciones
-├── components/
-│   ├── auth/                    # Guardas de Rutas (ProtectedRoute, AdminRoute)
-│   ├── layout/                  # UI Layout & Navbar Contextual por Rol
-│   ├── common/                  # Sistema de Notificaciones Toast
-│   └── activities/              # Componentes UI (Cards, Modales de Edición y Asistentes)
-└── pages/
-    ├── auth/                    # Vistas de Autenticación (Login, Register)
-    ├── ActivitiesCatalog.tsx    # Catálogo Principal con Buscador y Filtros
-    ├── MyRegistrations.tsx      # Gestión de Inscripciones del Participante
-    └── AdminDashboard.tsx       # Consola de Métricas y Administración
+├── 🧩 types/          # Contratos e interfaces de TypeScript
+├── 🔐 context/        # AuthContext (gestión de sesión y roles)
+├── ⚙️ lib/
+│   ├── supabase.ts    # Cliente Supabase singleton
+│   └── dataAccess/    # Servicios desacoplados y error handlers
+├── 🎨 components/
+│   ├── auth/          # Guards de rutas protegidas
+│   ├── layout/        # Navbar contextual y estructura base
+│   └── activities/    # Cards, modales y grilla interactiva
+└── 📄 pages/          # Catálogo, panel de usuario y dashboard admin
+
 ```
 
 ---
 
-## ⚙️ Instalación & Ejecución
+## 🚀 Puesta en Marcha
+
+### 1. Clonar e instalar dependencias
 
 ```bash
-# 1. Clonar el repositorio
-git clone https://github.com/nadiaescobbb/eventia.git
+git clone [https://github.com/nadiaescobbb/eventia.git](https://github.com/nadiaescobbb/eventia.git)
 cd eventia
-
-# 2. Instalar dependencias
 npm install
 
-# 3. Configurar variables de entorno (.env)
-VITE_SUPABASE_URL=https://tu-proyecto.supabase.co
+```
+
+### 2. Variables de entorno
+
+Crear un archivo `.env` en la raíz del proyecto:
+
+```env
+VITE_SUPABASE_URL=[https://tu-proyecto.supabase.co](https://tu-proyecto.supabase.co)
 VITE_SUPABASE_ANON_KEY=tu-anon-key
 
-# 4. Inicializar Base de Datos en Supabase
-# Ejecutar el script SQL de supabase/migrations/20260821_init.sql en el SQL Editor de Supabase.
+```
 
-# 5. Iniciar servidor de desarrollo
+### 3. Migraciones SQL
+
+Ejecutar el script `supabase/migrations/init.sql` dentro del **SQL Editor** de Supabase para inicializar tablas, triggers y políticas RLS.
+
+### 4. Iniciar servidor local
+
+```bash
 npm run dev
 
-# 6. Compilación de producción
-npm run build
 ```
 
 ---
 
-## 📜 Licencia
+## 📄 Licencia
 
-Proyecto distribuido bajo la Licencia MIT.  
-**Desarrollado y mantenido por Nadia Escobar** — 2026.
+Distribuido bajo la Licencia **MIT**. Desarrollado por **Nadia Escobar** — 2026.
+
+```
+
+```
