@@ -135,5 +135,3 @@ npm run dev
 Distribuido bajo la Licencia **MIT**. Desarrollado por **Nadia Escobar** — 2026.
 
 ```
-
-```
